@@ -154,8 +154,10 @@ config.ini
 data/train_values.csv
 data/train_labels.csv
 data/test_values.csv
-data/submission_format.csv
+submissions/submission_format.csv
 data/submission.csv
 saved_models
 tpot_checkpoint
 trash
+/models/tpot_checkpoints
+/submissions

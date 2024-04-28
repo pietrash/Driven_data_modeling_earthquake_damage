@@ -6,7 +6,7 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 import torch.nn.functional as F
 
-from data.data_preparation import get_train_data, save_model
+from data.data import get_train_data, save_model
 
 
 class NeuralNetwork(nn.Module):
@@ -28,7 +28,7 @@ class NeuralNetwork(nn.Module):
 
 
 def train_model():
-    x, y, _ = get_train_data(encoded_x=True, encoded_y=True, sampling_method='oversampling')
+    x, y, _ = get_train_data(encoded_x=True, encoded_y=True)
     x = x.astype(float)
     y = y.astype(float)
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, shuffle=True)
@@ -50,7 +50,7 @@ def train_model():
     x_test_tensor = torch.tensor(x_test.values).cuda()
     y_test_tensor = torch.tensor(y_test.values).cuda()
 
-    num_epochs = 2000
+    num_epochs = 1000
 
     best_model = None
     best_loss = None
@@ -74,39 +74,9 @@ def train_model():
         # Print loss every few epochs
         if (epoch + 1) % 10 == 0:
             print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {loss.item():.4f}')
-        if (epoch + 1) % 100 == 0:
-            with torch.no_grad():
-                x, y, _ = get_train_data(encoded_x=True, encoded_y=True)
-                x_test_tensor_ = torch.tensor(x.astype(float).values).cuda()
-                y_test_tensor_ = torch.tensor(y.astype(float).values).cuda()
-
-                test_outputs = model(x_test_tensor_)
-                test_loss = criterion(test_outputs, y_test_tensor_)
-                print(f'Test Loss: {test_loss.item():.4f}')
-
-                # Convert tensor outputs to NumPy arrays
-                y_test_numpy = y_test_tensor_.cpu().numpy()
-                _, predicted_indices = torch.max(test_outputs, dim=1)
-                predicted_onehot = torch.zeros_like(test_outputs)
-                predicted_onehot.scatter_(1, predicted_indices.view(-1, 1), 1)
-
-                # Convert one-hot tensor to numpy array
-                predicted_numpy = predicted_onehot.cpu().numpy()
-
-                # Create a DataFrame with real and predicted values
-                df = pd.DataFrame({'Real': y_test_numpy.flatten(), 'Predicted': predicted_numpy.flatten()})
-
-                score = f1_score(df['Real'], df['Predicted'], average='micro')
-
-                print(f'Test score: {score:.4f}')
 
     model = best_model
-    # model = load_model('saved_models/NN_score_0.785_2024-04-21_14-08-47/model.pkl')
     with torch.no_grad():
-        # x, y = get_train_data(encoded=True)
-        # x_test_tensor = torch.tensor(x.astype(float).values).cuda()
-        # y_test_tensor = torch.tensor(y.astype(float).values).cuda()
-
         test_outputs = model(x_test_tensor)
         test_loss = criterion(test_outputs, y_test_tensor)
         print(f'Test Loss: {test_loss.item():.4f}')
