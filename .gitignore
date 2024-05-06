@@ -161,3 +161,4 @@ tpot_checkpoint
 trash
 /models/tpot_checkpoints
 /submissions
+trash.py
