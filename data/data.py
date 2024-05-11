@@ -6,9 +6,11 @@ import shutil
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from imblearn.over_sampling import RandomOverSampler
-from imblearn.under_sampling import RandomUnderSampler
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
+import data.transformers as t
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -19,10 +21,6 @@ SUBMISSIONS_DIR = config['DEFAULT']['SUBMISSIONS_DIR']
 
 def get_submission_format():
     return pd.read_csv(f'{SUBMISSIONS_DIR}/submission_format.csv')
-
-
-def save_submission(submission, model_dir):
-    submission.to_csv(f'{SUBMISSIONS_DIR}/submission_{model_dir}.csv', index=False)
 
 
 def get_train_values():
@@ -42,7 +40,7 @@ def get_data(encoded_y=False, data='train'):
     train_data_y = get_train_labels()
     test_data_x = get_test_values()
 
-    train_data_x, test_data_x = preprocess_data(train_data_x, test_data_x)
+    train_data_x, test_data_x = pipeline_preprocessing(train_data_x, train_data_y, test_data_x)
 
     train_data_x.drop('building_id', axis=1, inplace=True)
     train_data_y.drop('building_id', axis=1, inplace=True)
@@ -56,168 +54,8 @@ def get_data(encoded_y=False, data='train'):
     if data == 'test':
         return test_data_x
 
-    return
 
-
-def preprocess_data(train_data_x, test_data_x):
-    train_modified_data = train_data_x.copy()
-    test_modified_data = test_data_x.copy()
-
-    # FILL NA GEO ID IN TEST SET WITH MODE OF THE TRAIN SET
-    def fill_na_geo_id(train_data, test_data):
-        cols = ['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id']
-
-        for col in cols:
-            unique_train_ids = set(train_data[col])
-            test_data[col] = test_data[col].apply(
-                lambda x: x if x in unique_train_ids else train_data[col].mode()[0])
-
-        return train_data, test_data
-
-    train_modified_data, test_modified_data = fill_na_geo_id(train_modified_data, test_modified_data)
-
-    # FREQUENCY ENCODING GEO ID
-    def freq_encoding(train_modified_data, test_modified_data):
-        cols = ['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id']
-
-        freq_dict = {}
-        for col in cols:
-            freq_dict[col] = dict(train_modified_data[col].value_counts())
-            train_modified_data[col + '_freq'] = train_modified_data[col].apply(lambda x: freq_dict[col][x])
-            test_modified_data[col + '_freq'] = test_modified_data[col].apply(lambda x: freq_dict[col][x])
-        return train_modified_data, test_modified_data
-
-    train_modified_data, test_modified_data = freq_encoding(train_modified_data, test_modified_data)
-
-    # DROP SECONDARY USE COLUMNS
-    def drop_secondary_use(train_data, test_data):
-        def modify_data(data):
-            # Dropping all has_secondary_use columns but the main one
-            data.drop(
-                columns=['has_secondary_use_use_police', 'has_secondary_use_gov_office', 'has_secondary_use_rental',
-                         'has_secondary_use_institution', 'has_secondary_use_school', 'has_secondary_use_industry',
-                         'has_secondary_use_health_post', 'has_secondary_use_gov_office',
-                         'has_secondary_use_use_police',
-                         'has_secondary_use_other'],
-                inplace=True
-            )
-            return data
-
-        return modify_data(train_data), modify_data(test_data)
-
-    train_modified_data, test_modified_data = drop_secondary_use(train_modified_data, test_modified_data)
-
-    # MERGE HAS SUPERSTRUCTURE COLUMNS (also plan configuration)
-    def merge_has_superstructure(train_data, test_data):
-        def modify_data(data):
-            # Adding new columns and deleting olds ones
-            data['has_superstructure_with_mud'] = np.where(
-                (data['has_superstructure_adobe_mud'] == 0) & (
-                        data['has_superstructure_mud_mortar_stone'] == 0) & (
-                        data['has_superstructure_mud_mortar_brick'] == 0), 0, 1)
-            data['has_superstructure_with_cement'] = np.where(
-                (data['has_superstructure_cement_mortar_brick'] == 0) & (
-                        data['has_superstructure_cement_mortar_stone'] == 0), 0, 1)
-            data['has_superstructure_rc'] = np.where(
-                (data['has_superstructure_rc_engineered'] == 0) & (
-                        data['has_superstructure_rc_non_engineered'] == 0), 0, 1)
-            data['plan_configuration_not_d'] = np.where(data['plan_configuration'] == 'd', 0, 1)
-            data = data.drop(
-                columns=['has_superstructure_adobe_mud', 'has_superstructure_mud_mortar_stone',
-                         'has_superstructure_mud_mortar_brick', 'has_superstructure_cement_mortar_brick',
-                         'has_superstructure_cement_mortar_stone', 'has_superstructure_rc_engineered',
-                         'has_superstructure_rc_non_engineered', 'plan_configuration'])
-            return data
-
-        return modify_data(train_data), modify_data(test_data)
-
-    train_modified_data, test_modified_data = merge_has_superstructure(train_modified_data, test_modified_data)
-
-    # ONE HOT ENCODING
-    train_modified_data = pd.get_dummies(train_modified_data)
-    test_modified_data = pd.get_dummies(test_modified_data)
-
-    # CREATE GEO_LOCATION_MEAN - mean damage_grade for each location
-    def get_geo_location_mean(train_data, test_data):
-        # Get mean for each geolocation
-        geo_id_mean = pd.concat(
-            objs=[
-                get_train_values()[['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id']],
-                get_train_labels()['damage_grade']
-            ],
-            axis=1)
-        geo_id_mean['geo_location_mean'] = geo_id_mean.groupby(['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id'])[
-            'damage_grade'].transform('mean')
-
-        def modify_data(data):
-            # Add geo location mean to data
-            data = pd.merge(
-                data,
-                geo_id_mean[['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id', 'geo_location_mean']],
-                on=['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id'],
-                how='left'
-            ).drop_duplicates().reset_index(drop=True)
-            return data
-
-        return modify_data(train_data), modify_data(test_data)
-
-    train_modified_data, test_modified_data = get_geo_location_mean(train_modified_data, test_modified_data)
-
-    def get_geo_id_mean(train_data, test_data):
-        geo_id_mean = pd.concat(
-            objs=[
-                get_train_values()[['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id']],
-                get_train_labels()['damage_grade']
-            ],
-            axis=1)
-
-        for i in range(1, 4):
-            # Calculate geo_id_mean
-            geo_id_mean[f'geo_level_{i}_id_mean'] = geo_id_mean.groupby(
-                f'geo_level_{i}_id')['damage_grade'].transform('mean')
-
-        def modify_data(data):
-            # Add geo_id_mean to data
-            for i in range(1, 4):
-                data = pd.merge(
-                    data,
-                    geo_id_mean[[f'geo_level_{i}_id', f'geo_level_{i}_id_mean']].drop_duplicates(),
-                    on=f'geo_level_{i}_id',
-                    how='left'
-                )
-            return data
-
-        return modify_data(train_data), modify_data(test_data)
-
-    train_modified_data, test_modified_data = get_geo_id_mean(train_modified_data, test_modified_data)
-
-    # SCALE NUMERIC VALUES
-    def scale_numeric_cols(train_data, test_data):
-        # scaler = StandardScaler()
-        scaler = MinMaxScaler()
-
-        scaled_col = ['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id',
-                      'count_floors_pre_eq', 'age', 'area_percentage',
-                      'height_percentage']
-
-        # scaled_col = ['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id',
-        #               'area_percentage', 'height_percentage']
-
-        # scaled_col = ['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id']
-
-        scaler.fit(train_data[scaled_col])
-
-        train_data[scaled_col] = scaler.transform(train_data[scaled_col])
-        test_data[scaled_col] = scaler.transform(test_data[scaled_col])
-
-        return train_data, test_data
-
-    # train_modified_data, test_modified_data = scale_numeric_cols(train_modified_data, test_modified_data)
-
-    return train_modified_data, test_modified_data
-
-
-def load_model(path):
+def get_model(path):
     model = joblib.load(f'{SAVED_MODELS_DIR}/{path}/model.pkl')
     params = joblib.load(f'{SAVED_MODELS_DIR}/{path}/params.pkl')
     features = joblib.load(f'{SAVED_MODELS_DIR}/{path}/features.pkl')
@@ -238,3 +76,40 @@ def save_model(prefix, model, params, features, score):
     shutil.copyfile(f'data/data.py', f'{directory}/data.py')
 
     print(f'Model saved to: {directory}')
+
+
+def save_submission(submission, model_dir):
+    submission.to_csv(f'{SUBMISSIONS_DIR}/submission_{model_dir}.csv', index=False)
+
+
+def pipeline_preprocessing(train_data_x, train_data_y, test_data_x):
+    train_modified_data = train_data_x.copy()
+    test_modified_data = test_data_x.copy()
+
+    geo_level_columns = ['geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id']
+    numerical_columns = ['count_floors_pre_eq', 'age', 'area_percentage', 'height_percentage', 'count_families']
+    categorical_columns = ['foundation_type', 'ground_floor_type', 'land_surface_condition',
+                           'legal_ownership_status', 'other_floor_type',
+                           'plan_configuration', 'position', 'roof_type']
+
+    preprocessing = ColumnTransformer(
+        transformers=[
+            # ('fill_unk_geo_id', t.FillUnkWithMode(), geo_level_columns),
+            ('freq_encoding', t.FrequencyEncoding(), geo_level_columns),
+            ('target_probability', t.TargetProbability(), geo_level_columns),
+            ('target_mean_grouped', t.TargetMeanGrouped(), geo_level_columns),
+            ('target_mean', t.TargetMean(), geo_level_columns),
+            ('one_hot_encoder', OneHotEncoder(sparse_output=False), categorical_columns)
+        ],
+        verbose_feature_names_out=False,
+        remainder='passthrough')
+    preprocessing.set_output(transform='pandas')
+
+    fill_unk = t.FillUnkWithMode()
+    train_modified_data = fill_unk.fit_transform(train_modified_data)
+    test_modified_data = fill_unk.transform(test_modified_data)
+
+    train_data_modified = preprocessing.fit_transform(train_modified_data, train_data_y['damage_grade'])
+    test_data_modified = preprocessing.transform(test_modified_data)
+
+    return train_data_modified, test_data_modified

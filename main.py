@@ -1,4 +1,4 @@
-from models import XGB, RFC
+from models import XGB, RFC, TPOT
 from data import data
 
 
@@ -100,12 +100,12 @@ def rfc_train_model():
         data='train'
     )
     params = {
-        'n_estimators': 450,
-        'max_depth': 22,
-        'max_features': 14,
-        'min_samples_split': 16,
-        'min_samples_leaf': 4,
-        'criterion': 'gini'
+        'n_estimators': 280,
+        'max_depth': 190,
+        'max_features': 0.13343366662911027,
+        'min_samples_split': 12,
+        'min_samples_leaf': 5,
+        # 'criterion': 'gini'
     }
 
     RFC.train_model(
@@ -178,12 +178,15 @@ def rfc_prediction():
 
     RFC.prediction(
         X=X,
-        model_dir='RFC_2024-05-02_21-17-43_score_0'
+        model_dir='RFC_2024-05-10_14-00-49_score_0'
     )
 
 
 def rfc_visualization():
-    print(RFC.plot_feature_importance('RFC_2024-05-02_21-17-43_score_0'))
+    importances = RFC.plot_feature_importance(
+        model_dir='RFC_2024-05-10_14-00-49_score_0'
+    )
+    print(importances)
 
 
 # xgb_train_model()
@@ -193,12 +196,9 @@ def rfc_visualization():
 # xgb_optuna()
 # xgb_visualization()
 
-# XGB.get_model_info('XGB_optuna_2024-05-06_02-55-28_score_0.7562')
-# XGB.get_model_info('XGB_grid_search_2024-04-30_16-06-47_score_0.7582')
-
 # rfc_grid_search()
-# rfc_train_model()
+rfc_train_model()
 # rfc_bayes()
-rfc_optuna()
+# rfc_optuna()
 # rfc_prediction()
 # rfc_visualization()

@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
 from sklearn.metrics import classification_report, f1_score
 from xgboost import plot_importance
-from data.data import save_model, load_model, get_submission_format, save_submission
+from data.data import save_model, get_model, get_submission_format, save_submission
 import cupy as cp
 import optuna as opt
 from optuna_dashboard import run_server
@@ -183,7 +183,7 @@ def optuna(X, y, print_score=False):
 
 
 def prediction(X, model_dir):
-    model, _, _ = load_model(model_dir)
+    model, _, _ = get_model(model_dir)
 
     # Make prediction
     y_pred = model.predict(X)
@@ -198,7 +198,7 @@ def prediction(X, model_dir):
 
 
 def plot_feature_importance(model_dir, top_n_features=None):
-    model, _, _ = load_model(model_dir)
+    model, _, _ = get_model(model_dir)
     fig, ax = plt.subplots(1, 1, figsize=(25, 25))
     plot_importance(model, max_num_features=top_n_features, ax=ax)
     plt.title(f'Top {top_n_features if top_n_features is not None else ""} Importance Feature')
@@ -206,7 +206,7 @@ def plot_feature_importance(model_dir, top_n_features=None):
 
 
 def get_model_info(model_dir):
-    model, params, features = load_model(model_dir)
+    model, params, features = get_model(model_dir)
     print(model)
     print(params)
     print(features)

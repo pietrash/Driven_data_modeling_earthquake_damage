@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, f1_score
-from data.data import save_model, load_model, get_submission_format, save_submission
+from data.data import save_model, get_model, get_submission_format, save_submission
 import optuna as opt
 from optuna_dashboard import run_server
 
@@ -111,7 +111,7 @@ def optuna(X, y, print_score=False):
     # Adjust y
     y = y.values.ravel()
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
 
     def objective(trial):
         # Number of trees in random forest
@@ -137,31 +137,11 @@ def optuna(X, y, print_score=False):
             "min_samples_leaf": min_samples_leaf
         }
 
-        #
         model = RandomForestClassifier(**params)
         model.fit(X_train, y_train)
 
         y_pred = model.predict(X_test)
         f1 = f1_score(y_test, y_pred, average='micro')
-
-        #
-        # dtrain = xgb.DMatrix(X_train, label=y_train)
-        # dtest = xgb.DMatrix(X_test, label=y_test)
-        #
-        # bst = xgb.train(params, dtrain, num_boost_round=params['num_boost_round'])
-        # y_pred = bst.predict(dtest)
-        # f1 = f1_score(y_test, y_pred, average='micro')
-
-        #
-        # model = xgb.XGBClassifier(
-        #     random_state=37,
-        #     **params
-        # )
-        #
-        # model.fit(X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=150, verbose=False)
-        #
-        # y_pred = model.predict(X_test)
-        # f1 = f1_score(y_test, y_pred, average='micro')
 
         return f1
 
@@ -183,11 +163,11 @@ def optuna(X, y, print_score=False):
         print("\nClassification Report:")
         print(classification_report(y_test, y_pred))
 
-    save_model('XGB_optuna', model, study.best_params, X.columns, score)
+    save_model('RFC_optuna', model, study.best_params, X.columns, score)
 
 
 def prediction(X, model_dir):
-    model, _, _ = load_model(model_dir)
+    model, _, _ = get_model(model_dir)
 
     # Make prediction
     y_pred = model.predict(X)
@@ -199,7 +179,7 @@ def prediction(X, model_dir):
 
 
 def plot_feature_importance(model_dir, top_n_features=0):
-    model, _, features = load_model(model_dir)
+    model, _, features = get_model(model_dir)
     importances = model.feature_importances_
     indices = np.argsort(importances)
     plt.figure(figsize=(25, 25))
@@ -210,5 +190,3 @@ def plot_feature_importance(model_dir, top_n_features=0):
     plt.xlabel('Relative Importance')
     plt.savefig('importance_random_forest.png')
     plt.show()
-
-    return features[indices][-top_n_features:]
